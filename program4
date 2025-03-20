@@ -1,0 +1,84 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.layers import Input, Dense, Lambda, Conv2D, Flatten, Reshape
+from tensorflow.keras.models import Model
+from tensorflow.keras import backend as K
+
+(x_train, _), (x_test, _) = cifar10.load_data()
+x_train = x_train.astype('float32') / 255.
+x_test = x_test.astype('float32') / 255.
+x_train = x_train.reshape(-1, 32, 32, 3)
+x_test = x_test.reshape(-1, 32, 32, 3)
+
+latent_dim = 64
+input_shape = (32, 32, 3)
+
+class VAE(Model):
+    def __init__(self, latent_dim):
+        super(VAE, self).__init__()
+        self.encoder_conv1 = Conv2D(32, (3, 3), activation='relu', padding='same')
+        self.encoder_conv2 = Conv2D(64, (3, 3), activation='relu', padding='same')
+        self.flatten = Flatten()
+        self.dense1 = Dense(128, activation='relu')
+        self.z_mean = Dense(latent_dim)
+        self.z_log_var = Dense(latent_dim)
+        self.decoder_dense = Dense(128, activation='relu')
+        self.decoder_output = Dense(32 * 32 * 3, activation='sigmoid')
+        self.reshape = Reshape((32, 32, 3))
+
+    def encode(self, x):
+        x = self.encoder_conv1(x)
+        x = self.encoder_conv2(x)
+        x = self.flatten(x)
+        x = self.dense1(x)
+        return self.z_mean(x), self.z_log_var(x)
+
+    def reparameterize(self, z_mean, z_log_var):
+        epsilon = K.random_normal(shape=K.shape(z_mean))
+        return z_mean + K.exp(0.5 * z_log_var) * epsilon
+
+    def decode(self, z):
+        x = self.decoder_dense(z)
+        x = self.decoder_output(x)
+        return self.reshape(x)
+
+    def call(self, inputs):
+        z_mean, z_log_var = self.encode(inputs)
+        z = self.reparameterize(z_mean, z_log_var)
+        reconstructed = self.decode(z)
+        kl_loss = -0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+        self.add_loss(K.mean(kl_loss))
+        return reconstructed
+
+vae = VAE(latent_dim)
+vae.compile(optimizer='adam')
+
+vae.fit(x_train, epochs=10, batch_size=128, validation_data=(x_test, None))
+
+def generate_images(model, n=10):
+    random_latent_vectors = np.random.normal(size=(n, latent_dim))
+    generated_images = model.decode(random_latent_vectors)
+    return generated_images
+
+generated_images = generate_images(vae, n=10)
+plt.figure(figsize=(20, 4))
+for i in range(10):
+    ax = plt.subplot(2, 10, i + 1)
+    plt.imshow(generated_images[i])
+    plt.axis('off')
+plt.show()
+
+# Create the encoder model
+encoder_inputs = Input(shape=input_shape)
+z_mean, z_log_var = vae.encode(encoder_inputs)
+encoder_model = Model(encoder_inputs, z_mean)
+
+z_mean_test = encoder_model.predict(x_test)
+plt.figure(figsize=(10, 8))
+plt.scatter(z_mean_test[:, 0], z_mean_test[:, 1], c='blue', alpha=0.5)
+plt.xlabel('Latent Dimension 1')
+plt.ylabel('Latent Dimension 2')
+plt.title('Latent Space Visualization')
+plt.show()
