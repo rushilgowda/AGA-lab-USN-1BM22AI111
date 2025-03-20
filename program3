@@ -1,0 +1,67 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, Conv2DTranspose, Flatten, Reshape
+from tensorflow.keras import regularizers
+
+# Step 1: Load and prepare the CIFAR-10 dataset
+(x_train, _), (x_test, _) = cifar10.load_data()
+x_train = x_train.astype('float32') / 255.
+x_test = x_test.astype('float32') / 255.
+
+# Add noise to the images
+def add_noise(images):
+    noise_factor = 0.5
+    noisy_images = images + noise_factor * np.random.normal(loc=0.0, scale=1.0, size=images.shape)
+    noisy_images = np.clip(noisy_images, 0., 1.)
+    return noisy_images
+
+x_train_noisy = add_noise(x_train)
+x_test_noisy = add_noise(x_test)
+
+# Step 2: Build the Autoencoder model
+autoencoder = Sequential([
+    Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(32, 32, 3)),
+    Conv2D(16, (3, 3), activation='relu', padding='same'),
+    Conv2D(8, (3, 3), activation='relu', padding='same'),
+    Conv2DTranspose(16, (3, 3), activation='relu', padding='same'),
+    Conv2DTranspose(32, (3, 3), activation='relu', padding='same'),
+    Conv2D(3, (3, 3), activation='sigmoid', padding='same')
+])
+
+autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
+
+# Step 3: Train the Autoencoder
+autoencoder.fit(x_train_noisy, x_train,
+                epochs=50,
+                batch_size=128,
+                validation_data=(x_test_noisy, x_test))
+
+# Step 4: Compare Noisy and Reconstructed Images
+decoded_imgs = autoencoder.predict(x_test_noisy)
+
+# Display results
+n = 10  # Number of images to display
+plt.figure(figsize=(20, 6))
+
+for i in range(n):
+    # Noisy Images
+    ax = plt.subplot(3, n, i + 1)
+    plt.imshow(x_test_noisy[i])
+    plt.title("Noisy")
+    plt.axis('off')
+
+    # Original Images
+    ax = plt.subplot(3, n, i + 1 + n)
+    plt.imshow(x_test[i])
+    plt.title("Original")
+    plt.axis('off')
+
+    # Reconstructed Images
+    ax = plt.subplot(3, n, i + 1 + 2*n)
+    plt.imshow(decoded_imgs[i])
+    plt.title("Reconstructed")
+    plt.axis('off')
+
+plt.show()
